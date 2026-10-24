@@ -1,0 +1,84 @@
+{
+ "explore_default": "ep24",
+ "showcase": {
+  "gif": "assets/ep24_beam.gif",
+  "caption": "Episode 24 (3 defects: weight leak, upper body leaning 48°, right knee bending forward). The broken robot can't stand and falls under Bullet physics. Beam's L1 repair still falls. L2 passes and keeps walking. L3 looks fine at a glance, but its copied sway leaves seams the verifier rejects."
+ },
+ "level_note": "L2 gave the best result: 27/30 within 3 rounds, 8/8 on the three-defect robots, the fewest tokens per episode, and none of its 53 scripts crashed. More hinting was not better: L3's extra hint (\"restore values from the same phase one cycle earlier\") points at already-broken frames when a defect lasts longer than one cycle, and Beam followed it (23/30).",
+ "loophole": {
+  "lede": "The first full run scored 29/30 at L3. The GIF showed why: the system prompt asks for \"the smallest change that makes the metrics pass\", and the balance check only failed a CoM that stayed outside the feet for 6 frames in a row. Beam read the report frame by frame and straightened the upper body on exactly the flagged frames, the smallest change that passes. The gap was in our verifier. We closed it (sudden jumps in any bone's motion are now an error, and the upper body is limited to ±20°) and regenerated all 30 episodes (same plan, smoother gait) and redid all 90 runs. With full evidence (L2), Beam's score did not move: 27/30 before, 27/30 after.",
+  "cards": [
+   {
+    "title": "Run 1 · loophole open",
+    "status": "fail",
+    "rows": [
+     [
+      "Balance repairs that passed",
+      "52"
+     ],
+     [
+      "…with the torso snapping ≥15° in one frame",
+      "46 of 52"
+     ],
+     [
+      "…still leaning 45–50° on some frames",
+      "26 of 52"
+     ],
+     [
+      "Solved within 3 rounds (L1 / L2 / L3)",
+      "23 / 27 / 29"
+     ]
+    ],
+    "quote_tag": "Beam's fix (ep05, L3), unedited",
+    "quote": "# Frames where the torso lean breaks balance, mapped to the same phase one gait cycle earlier.\nbad_frames = list(range(28, 34)) + list(range(51, 58))",
+    "verdict": "✕ It only touches the flagged frames 28–33 and 51–57. The checks pass, but the upper body flickers between upright and a 50° lean."
+   },
+   {
+    "title": "Run 2 · loophole closed",
+    "status": "pass",
+    "rows": [
+     [
+      "New checks",
+      "motion continuity, upper-body tilt ±20°"
+     ],
+     [
+      "Oracle fixes that still pass",
+      "30 / 30"
+     ],
+     [
+      "Normal walks that still pass",
+      "all 10 body shapes tested"
+     ],
+     [
+      "Solved within 3 rounds (L1 / L2 / L3)",
+      "18 / 27 / 23"
+     ]
+    ],
+    "verdict": "✓ A pass now means the whole defect window was repaired, not just the flagged frames."
+   }
+  ]
+ },
+ "failure_title": "What the remaining failures teach the next version",
+ "failure_lede": "22 of 90 runs still fail; each leaves a foot in the floor, a jump in the motion, or the CoM outside the feet. They point at what the next report and prompt should say:",
+ "failure_modes": [
+  {
+   "name": "Right symptom, wrong bone",
+   "where": "ep20 · L1 · after 3 rounds",
+   "quote": "The right-foot pose drives `foot.R` skinned vertices below z=0 in frames 12-60, worst 0.0502 m at frame 60, so `foot.R` location must be raised in those frames.",
+   "truth": "the right knee was keyed bending forward (shin.R +33°); after clamping it, the straight leg pushes the foot into the floor."
+  },
+  {
+   "name": "Copying a broken cycle",
+   "where": "ep21 · L3 · after 3 rounds",
+   "quote": "torso location contains an abnormal block (frames 38-45) whose values differ by about 0.253 m from the same phase one 24-frame cycle earlier (frames 14-21)",
+   "truth": "the torso slides 0.25 m from frame 25 to the end, so \"one cycle earlier\" is itself broken from frame 49 on."
+  },
+  {
+   "name": "Clamped to the limit, not restored",
+   "where": "ep11 · L2 · after 3 rounds",
+   "quote": "Torso Z was clamped to +20° starting abruptly at frame 27, creating a 23.6° discontinuity from frame 26 and a 15.0° second-difference jump.",
+   "truth": "the normal walk keeps the torso upright (0°); +20° is only the outer limit."
+  }
+ ],
+ "loophole_title": "Beam read the verifier so precisely that it found a gap in it"
+}

@@ -1,0 +1,619 @@
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Build with Beam · Reflection loop for 3D rigs · v2</div>
+    <h1>Gait<span>Reflect</span></h1>
+    <p class="sub">Beam reads a deterministic Blender walk test, diagnoses why a rigged robot stretches, over-straightens a knee or can't stay on its feet, writes the bpy fix, and Blender verifies it. Robots that can't stand fall over under Bullet physics, not keyframes.</p>
+    <div class="chips">
+      <span class="chip">Model <b>Beam-1.0-501B-A23B</b></span>
+      <span class="chip">Route <b>HF Inference Providers</b></span>
+      <span class="chip">Verifier <b>Blender 5.2 · bpy + bmesh</b></span>
+      <span class="chip">Falls <b>Bullet rigid-body physics</b></span>
+      <a class="chip" href="#bench" style="text-decoration:none">Benchmark <b>30 robots × 3 evidence levels</b></a>
+    </div>
+    <div class="stats" id="heroStats">
+      <div class="stat"><div class="v" data-k="l2">–</div><div class="l">solved at L2 (within 3 rounds)</div></div>
+      <div class="stat"><div class="v" data-k="l1">–</div><div class="l">solved at L1 (measurements only)</div></div>
+      <div class="stat"><div class="v" data-k="calls">–</div><div class="l">Beam fix scripts verified</div></div>
+      <div class="stat"><div class="v" data-k="tokens">–</div><div class="l">tokens in total, incl. reasoning</div></div>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>What changed in v2</h2>
+    <p class="lede">v1's robots walked with bird-like knees, "fell" because a keyframe pushed the hips into the floor, and had no face, so it was hard to tell which way they were walking. v2 rebuilds the robots, the defects and all 90 Beam runs.</p>
+    <div class="changes">
+      <div class="card"><h3>Human knees</h3><p>The thigh swings forward and the shin bends backward, like a person. The knee defect is now <b>hyperextension</b>: the shin bends forward past straight, beyond the rig's limit (−150° … +5°). Clamping it to the limit is not enough: the straight leg pushes the foot into the floor, which the verifier also rejects.</p><span class="was">v1: thigh swung back, shin bent forward ("knee flip"), and the clamped "fix" looked stiff.</span></div>
+      <div class="card"><h3>Physical falls</h3><p>The defect is a posture that can't stand: the upper body leans or slides sideways until the center of mass leaves the feet's support polygon for 6+ frames. The fall itself is simulated with <b>Bullet</b>.</p><span class="was">v1: a keyframe sank or tipped the root bone.</span></div>
+      <div class="card"><h3>A face</h3><p>An orange visor on the head and a plate on the chest mark the front, so you can always tell which way the robot is facing.</p><span class="was">v1: plain boxes, front and back looked the same.</span></div>
+      <div class="card"><h3>Walks forward</h3><p>The hips travel forward while the stance foot stays planted, and the toes point the way the robot moves. The verifier checks both. Left and right now match a robot facing forward.</p><span class="was">v1: walked in place; left/right were mirrored.</span></div>
+    </div>
+    <figure class="showcase">
+      <img src="assets/knees_v1_v2.png" alt="Side view of the v1 robot (thigh swings back, shin bends forward like a bird) above the v2 robot (thigh swings forward, shin bends back like a person).">
+      <figcaption class="cap">Same side view, walking to the right. v1's knee bent like a bird's; v2's bends like a person's, and the orange face shows which way the robot is facing.</figcaption>
+    </figure>
+    <figure class="showcase" id="showcase" hidden>
+      <img id="showcaseImg" alt="Animated comparison: the broken robot loses balance and falls under physics; Beam's repairs at L1, L2 and L3 walk on.">
+      <figcaption class="cap" id="showcaseCap"></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>The reflection loop</h2>
+    <p class="lede">Beam never grades its own work. Blender measures, Beam reasons and writes code, Blender measures again.</p>
+    <div class="loop">
+      <div class="step"><div class="n">01</div><h3>Verify</h3><p>Play the walk cycle headless. Measure every face's area vs. rest pose, audit all vertex weights, check joint limits, and test whether the center of mass stays over the feet.</p><span class="who">Blender · bpy/bmesh</span></div>
+      <div class="step"><div class="n">02</div><h3>Report</h3><p>Turn the numbers into a structured prompt. How much it explains depends on the evidence level (L1–L3).</p><span class="who">harness.py</span></div>
+      <div class="step"><div class="n">03</div><h3>Reflect</h3><p>Beam diagnoses each issue ID and returns schema-checked JSON with an idempotent bpy fix script.</p><span class="who beam">Beam via HF Inference Providers</span></div>
+      <div class="step"><div class="n">04</div><h3>Apply &amp; re-verify</h3><p>Run the script in a sandboxed Blender, save a new .blend, test again. Failures go back to Beam as history, up to 3 rounds.</p><span class="who">apply_fix.py</span></div>
+    </div>
+    <p class="loop-note">PASS means zero verifier errors: no face over 1.5× stretch, no weights on non-adjacent bones, no joint outside its limit, no foot more than 2 cm into the floor, no sudden jump in any bone's motion, the upper body within ±20°, the CoM never outside the feet for 6+ frames in a row, and the robot still walks forward with the same stride. Out of scope: momentum (sudden stops), foot sliding, and outside forces such as pushes or slopes.</p>
+  </div>
+</section>
+
+<section id="bench">
+  <div class="wrap">
+    <div class="eyebrow">GaitReflect-Bench v2</div>
+    <h2>30 generated robots × 3 evidence levels</h2>
+    <p class="lede">30 humanoids with random proportions and gaits, 1–3 planted defects each (weight leak, balance loss, knee hyperextension). Every episode is checked to be solvable: with no fix it fails with exactly the planted defects, and the generated oracle fix passes in one round. Beam repaired each one at three evidence levels, with up to 3 rounds. <a href="https://huggingface.co/datasets/AG1188/gaitreflect-bench">Dataset with every prompt and script →</a></p>
+
+    <div class="bench-grid">
+      <div class="card chart-card">
+        <h3>Solved within 3 rounds</h3>
+        <p class="sub">By number of planted defects. Same 30 episodes at every level.</p>
+        <div class="chart-legend" id="benchLegend"></div>
+        <div id="benchChart"></div>
+        <details class="table-toggle"><summary>Show as table</summary><div class="table-scroll"><table id="benchTable"></table></div></details>
+      </div>
+      <div class="card">
+        <h3>Per evidence level</h3>
+        <table class="levels" id="levelTable"></table>
+        <p class="note" id="levelNote"></p>
+      </div>
+    </div>
+
+    <div id="loopholeBlock" hidden>
+      <h3 class="sub-h" id="loophole">Beam read the verifier so precisely that it found a gap in it</h3>
+      <p class="lede" id="loopholeLede"></p>
+      <div class="compare" id="loopholeCards"></div>
+    </div>
+
+    <h3 class="sub-h" id="explore">Explore any episode in 3D</h3>
+    <p class="lede">The broken input next to Beam's final repair at each evidence level. Frames 1–60 are the keyed walk cycle; a robot that can't stand is handed to Bullet at that moment and falls. Drag to orbit; the camera follows the walk.</p>
+    <div class="ep-bar">
+      <label for="epSelect">Episode</label>
+      <select id="epSelect"></select>
+      <div class="ep-truth" id="epTruth"></div>
+    </div>
+    <div class="bench-viewers" id="benchViewers"><div class="loading-row">Loading 120 rigs…</div></div>
+    <div class="timeline">
+      <button id="benchBtn" type="button">Pause</button>
+      <input id="benchSlider" type="range" min="1" max="96" step="0.1" value="1" aria-label="Benchmark animation frame">
+      <span class="frame" id="benchLabel">Frame 1 / 96</span>
+    </div>
+    <div class="legend-row">
+      <span><i class="sw ok"></i>Body</span>
+      <span><i class="sw front"></i>Face &amp; chest (front)</span>
+      <span><i class="sw hot"></i>Stretched &gt;1.5× (weight leak)</span>
+      <span><i class="sw sup"></i>Support polygon (feet on the ground)</span>
+      <span><i class="sw com"></i>Center of mass and its shadow</span>
+    </div>
+
+    <h3 class="sub-h">Every Beam round for this episode</h3>
+    <p class="lede">Beam's diagnosis, the script it wrote, and what Blender said about it. Local file paths are removed; nothing else is changed.</p>
+    <div class="tabs lv-tabs" role="tablist" id="runTabs"></div>
+    <div id="runBody"></div>
+
+    <div id="failureBlock" hidden>
+      <h3 class="sub-h" id="failureTitle"></h3>
+      <p class="lede" id="failureLede"></p>
+      <div class="evidence" id="failureModes"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Run it yourself</h2>
+    <p class="lede">Python 3.13 with <code>pip install bpy pybullet</code> (Blender 5.2 as a module; pybullet may need to build from source). Beam runs through Hugging Face Inference Providers with your <code>HF_TOKEN</code>.</p>
+    <div class="run-grid">
+      <pre><code># 1. generate the 30 episodes and check each is solvable (no API)
+python3 make_bench.py --out episodes
+
+# 2. Beam on 30 episodes × L1/L2/L3, up to 3 rounds each
+export HF_TOKEN=...
+python3 run_bench.py --effort high --token-budget 2300000
+
+# 3. one robot, one level
+python3 reflect_loop.py episodes/ep24.blend --mesh Robot --armature Rig --evidence L2
+
+# 4. bake the 3D models (Bullet falls) and this page's data
+python3 build_viewer.py --results results --out site</code></pre>
+      <ul class="files" id="files"></ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">Built for the <a href="https://huggingface.co/reflection/Beam-1.0-501B-A23B/discussions/5">Build with Beam</a> challenge. All 90 repairs (diagnoses and fix scripts) are by Beam; the verifier, generator and this page were built with Claude Code. v1 is in this Space's commit history. MIT licensed.</div>
+</footer>
+
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const SPACE = "https://huggingface.co/spaces/AG1188/gaitreflect-beam/blob/main/";
+const FPS = 24;
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? (e.className = v) : e.setAttribute(k, v);
+  for (const k of kids) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return e;
+};
+const badge = (status) => el("span", { class: `badge ${status === "pass" ? "pass" : "fail"}` }, status.toUpperCase());
+const fmt = (n) => n.toLocaleString("en-US");
+
+const [bench, bv, runs, bin] = await Promise.all([
+  fetch("bench.json").then((r) => r.json()),
+  fetch("bench_viewer.json").then((r) => r.json()),
+  fetch("bench_runs.json").then((r) => r.json()),
+  fetch("bench_models.bin").then((r) => r.arrayBuffer()),
+]);
+const FRAMES = bv.frames, WALK = bv.walk_frames;
+
+/* ---------------- 3D viewer ---------------- */
+// 検証器と同じ定義: 面積加重の重心、地面から 3 cm 以内の頂点 = 接地、その凸包 = 支えの範囲
+const COL_OK = new THREE.Color("#8d99ad"), COL_FRONT = new THREE.Color("#ff7f1f"), COL_HOT = new THREE.Color("#e0473c"),
+      COL_MID = new THREE.Color("#f0a541");
+const CONTACT = 0.03, MARGIN = 0.05;
+
+function hull2(pts) {
+  pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (pts.length < 3) return pts;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of pts) { while (lo.length >= 2 && cr(lo.at(-2), lo.at(-1), p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of pts.reverse()) { while (up.length >= 2 && cr(up.at(-2), up.at(-1), p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+function outsideDist(p, h) {
+  if (h.length < 3) return Infinity;
+  let inside = true, best = Infinity;
+  for (let i = 0; i < h.length; i++) {
+    const a = h[i], b = h[(i + 1) % h.length];
+    // 凸包は反時計回り (x, -z 平面で)。点が辺の右側にあれば外
+    if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) < 0) inside = false;
+    const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+    best = Math.min(best, Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy));
+  }
+  return inside ? 0 : best;
+}
+function triArea(a, b, c) {
+  const ab = new THREE.Vector3().subVectors(b, a), ac = new THREE.Vector3().subVectors(c, a);
+  return ab.cross(ac).length() / 2;
+}
+
+class Viewer {
+  constructor(panel, host) {
+    const stage = el("div", { class: "stage" }, el("div", { class: "loading" }, "Loading model…"));
+    this.canvas = el("canvas");
+    stage.prepend(this.canvas);
+    this.stretchEl = el("div", { class: "val" }, "–");
+    this.outEl = el("div", { class: "val" }, "–");
+    this.stateEl = el("div", { class: "state" });
+    this.fallOnset = panel.fallOnset || 0;
+    this.fallKind = panel.fallKind || "tip";
+    const card = el("div", { class: "viewer" },
+      el("div", { class: "head" }, el("div", {}, el("h3", {}, panel.title), el("p", {}, panel.sub), this.stateEl), badge(panel.status)),
+      stage,
+      el("div", { class: "readout" },
+        el("div", {}, el("div", { class: "k" }, "Worst face stretch"), this.stretchEl),
+        el("div", {}, el("div", { class: "k" }, "CoM outside the feet"), this.outEl)));
+    host.append(card);
+    this.card = card;
+    this.stage = stage;
+
+    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(32, 1, 0.05, 60);
+    // ほぼ真横 (少しだけ前寄り) から。膝の向きが一目でわかるように。glTF では前方 = -Z、右 = +X
+    this.camOffset = new THREE.Vector3(3.9, 1.3, -1.3);
+    this.camera.position.copy(this.camOffset).add(new THREE.Vector3(0, 0.8, 0));
+    this.controls = new OrbitControls(this.camera, this.canvas);
+    this.controls.target.set(0, 0.8, 0);
+    this.controls.enableDamping = true;
+    this.controls.enablePan = false;
+    this.controls.minDistance = 1.5;
+    this.controls.maxDistance = 9;
+
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a80, 1.6));
+    this.sun = new THREE.DirectionalLight(0xffffff, 1.8);
+    this.sun.position.set(2.5, 4, -1);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(1024, 1024);
+    Object.assign(this.sun.shadow.camera, { left: -3, right: 3, top: 3, bottom: -3 });
+    this.scene.add(this.sun, this.sun.target);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.18 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+    const grid = new THREE.GridHelper(20, 80, 0x9a988f, 0x9a988f);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.25;
+    this.scene.add(grid);
+
+    // 支えの範囲 (床の多角形) と、重心・その影
+    this.supGeo = new THREE.BufferGeometry();
+    this.sup = new THREE.Mesh(this.supGeo, new THREE.MeshBasicMaterial({ color: 0x5aaaf0, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+    this.sup.renderOrder = 5;
+    this.scene.add(this.sup);
+    const accent = css("--accent");
+    this.com = new THREE.Mesh(new THREE.SphereGeometry(0.045, 20, 14), new THREE.MeshBasicMaterial({ color: accent, depthTest: false }));
+    this.com.renderOrder = 10;
+    this.shadowDot = new THREE.Mesh(new THREE.CircleGeometry(0.04, 20), new THREE.MeshBasicMaterial({ color: accent, depthTest: false }));
+    this.shadowDot.rotation.x = -Math.PI / 2;
+    this.shadowDot.renderOrder = 10;
+    this.comLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+      new THREE.LineDashedMaterial({ color: accent, dashSize: 0.04, gapSize: 0.03, depthTest: false }));
+    this.comLine.renderOrder = 10;
+    this.scene.add(this.com, this.shadowDot, this.comLine);
+    this.follow = null;
+
+    this.ro = new ResizeObserver(() => this.resize());
+    this.ro.observe(stage);
+    this.visible = true;
+    this.io = new IntersectionObserver(([e]) => { this.visible = e.isIntersecting; });
+    this.io.observe(stage);
+    this.ready = new GLTFLoader().parseAsync(panel.buffer, "").then((g) => this.setup(g))
+      .catch((err) => { console.error(err); stage.querySelector(".loading").textContent = "Could not load model"; });
+  }
+
+  setup(gltf) {
+    this.scene.add(gltf.scene);
+    this.meshes = [];
+    gltf.scene.traverse((o) => { if (o.isSkinnedMesh) this.meshes.push(o); });
+    for (const m of this.meshes) {
+      const front = (m.material.name || "").startsWith("Front");
+      m.geometry = m.geometry.toNonIndexed();
+      m.frustumCulled = false;
+      m.castShadow = true;
+      const pos = m.geometry.attributes.position;
+      m.userData.nTri = pos.count / 3;
+      m.userData.base = front ? COL_FRONT : COL_OK;
+      m.userData.colors = new Float32Array(pos.count * 3);
+      m.geometry.setAttribute("color", new THREE.BufferAttribute(m.userData.colors, 3));
+      m.material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.7, metalness: 0.05 });
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+      m.userData.rest = new Float32Array(m.userData.nTri);
+      for (let t = 0; t < m.userData.nTri; t++) {
+        a.fromBufferAttribute(pos, 3 * t); b.fromBufferAttribute(pos, 3 * t + 1); c.fromBufferAttribute(pos, 3 * t + 2);
+        m.userData.rest[t] = triArea(a, b, c);
+      }
+    }
+    this.mixer = new THREE.AnimationMixer(gltf.scene);
+    for (const clip of gltf.animations) this.mixer.clipAction(clip).play();
+    this.stage.querySelector(".loading")?.remove();
+    this.resize();
+  }
+
+  update(frame) {
+    if (!this.meshes) return;
+    this.mixer.setTime(frame / FPS);       // glTF の時刻はフレーム 1 = 1/24 秒から始まる
+    this.scene.updateMatrixWorld(true);
+    const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const acc = new THREE.Vector3(), cen = new THREE.Vector3();
+    let total = 0, worst = 1;
+    const contacts = [];
+    for (const m of this.meshes) {
+      const { nTri, rest, colors, base } = m.userData;
+      for (let t = 0; t < nTri; t++) {
+        for (let j = 0; j < 3; j++) {
+          m.getVertexPosition(3 * t + j, v[j]); v[j].applyMatrix4(m.matrixWorld);
+          if (v[j].y <= CONTACT) contacts.push([v[j].x, -v[j].z]);
+        }
+        const area = triArea(v[0], v[1], v[2]);
+        const r = rest[t] > 1e-8 ? area / rest[t] : 1;
+        worst = Math.max(worst, r);
+        const col = r >= 1.5 ? COL_HOT : r >= 1.15 ? COL_MID.clone().lerp(COL_HOT, (r - 1.15) / 0.35) : base;
+        for (let j = 0; j < 3; j++) col.toArray(colors, (3 * t + j) * 3);
+        cen.copy(v[0]).add(v[1]).add(v[2]).multiplyScalar(1 / 3);
+        acc.addScaledVector(cen, area);
+        total += area;
+      }
+      m.geometry.attributes.color.needsUpdate = true;
+    }
+    acc.multiplyScalar(1 / total);
+    const falling = this.fallOnset && frame >= this.fallOnset;
+    // 支えの範囲: 倒れ始めたら描かない (寝転んだ体は「足」ではない)
+    const h = falling ? [] : hull2(contacts);
+    if (h.length >= 3) {
+      const pts = [];
+      for (let i = 1; i < h.length - 1; i++) for (const q of [h[0], h[i], h[i + 1]]) pts.push(q[0], 0.003, -q[1]);
+      this.supGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      this.sup.visible = true;
+    } else this.sup.visible = false;
+    const out = falling ? null : outsideDist([acc.x, -acc.z], h);
+    const bad = falling || (out !== null && out > MARGIN);
+    const col = bad ? COL_HOT : new THREE.Color(css("--accent"));
+    this.com.material.color.copy(col); this.shadowDot.material.color.copy(col); this.comLine.material.color.copy(col);
+    this.com.position.copy(acc);
+    this.shadowDot.position.set(acc.x, 0.004, acc.z);
+    const lp = this.comLine.geometry.attributes.position;
+    lp.setXYZ(0, acc.x, acc.y, acc.z); lp.setXYZ(1, acc.x, 0, acc.z); lp.needsUpdate = true;
+    this.comLine.computeLineDistances();
+    this.stretchEl.textContent = worst.toFixed(2) + "×";
+    this.stretchEl.classList.toggle("hot", worst >= 1.5);
+    this.outEl.textContent = falling ? "fell" : out === Infinity ? "no support" : out.toFixed(2) + " m";
+    this.outEl.classList.toggle("hot", bad);
+    this.stateEl.textContent = !falling ? (frame > WALK ? "Walk cycle ended at frame 60" : "")
+      : this.fallKind === "airborne" ? `Feet off the floor from frame ${this.fallOnset} → dropped (Bullet physics)`
+      : `Can't stand from frame ${this.fallOnset} → falls (Bullet physics)`;
+    // カメラは重心の水平位置を、なめらかに追いかける (ユーザーの回転はそのまま)
+    const goal = new THREE.Vector3(acc.x * 0.5, 0.8, acc.z);
+    if (!this.follow || Math.abs(frame - this.lastFrame) > 3) this.follow = goal.clone();
+    else this.follow.lerp(goal, 0.15);
+    this.lastFrame = frame;
+    const d = this.follow.clone().sub(this.controls.target);
+    this.controls.target.add(d);
+    this.camera.position.add(d);
+    this.sun.position.set(this.follow.x + 2.5, 4, this.follow.z - 1);
+    this.sun.target.position.copy(this.follow);
+  }
+
+  resize() {
+    const { width, height } = this.stage.getBoundingClientRect();
+    if (!width || !height) return;
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+  }
+
+  render() { this.controls.update(); this.renderer.render(this.scene, this.camera); }
+
+  dispose() {
+    this.ro.disconnect();
+    this.io.disconnect();
+    this.controls.dispose();
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
+    this.card.remove();
+  }
+}
+
+const TIMELINES = [];
+function makeTimeline(prefix) {
+  const tl = {
+    viewers: [], frame: 1, playing: !matchMedia("(prefers-reduced-motion: reduce)").matches,
+    slider: document.getElementById(`${prefix}Slider`), label: document.getElementById(`${prefix}Label`),
+    btn: document.getElementById(`${prefix}Btn`),
+  };
+  tl.slider.max = FRAMES;
+  tl.btn.textContent = tl.playing ? "Pause" : "Play";
+  tl.btn.onclick = () => { tl.playing = !tl.playing; tl.btn.textContent = tl.playing ? "Pause" : "Play"; };
+  tl.slider.oninput = () => { tl.frame = +tl.slider.value; tl.playing = false; tl.btn.textContent = "Play"; };
+  TIMELINES.push(tl);
+  return tl;
+}
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  for (const tl of TIMELINES) {
+    if (tl.playing) { tl.frame += dt * FPS * 0.75; if (tl.frame > FRAMES) tl.frame = 1; tl.slider.value = tl.frame; }
+    tl.label.textContent = `Frame ${Math.floor(tl.frame)} / ${FRAMES}`;
+    for (const v of tl.viewers) if (v.visible) { v.update(tl.frame); v.render(); }
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ---------------- hero + showcase ---------------- */
+const L = bench.levels;
+const n = L.L1.n;
+const allScripts = ["L1", "L2", "L3"].reduce((s, k) => s + L[k].scripts, 0);
+const allTokens = ["L1", "L2", "L3"].reduce((s, k) => s + L[k].tokens_per_episode * L[k].n, 0);
+const hero = { l2: `${L.L2.solved_any}/${n}`, l1: `${L.L1.solved_any}/${n}`, calls: fmt(allScripts), tokens: `${(allTokens / 1e6).toFixed(2)}M` };
+for (const [k, val] of Object.entries(hero)) document.querySelector(`#heroStats [data-k="${k}"]`).textContent = val;
+if (bench.showcase) {
+  document.getElementById("showcaseImg").src = bench.showcase.gif;
+  document.getElementById("showcaseCap").textContent = bench.showcase.caption;
+  document.getElementById("showcase").hidden = false;
+}
+
+/* ---------------- benchmark chart + table ---------------- */
+const LV = [
+  { id: "L1", name: "L1 · measurements only", color: "--lv1" },
+  { id: "L2", name: "L2 · + indices & bone motion", color: "--lv2" },
+  { id: "L3", name: "L3 · + near-answer hints", color: "--lv3" },
+];
+document.getElementById("benchLegend").append(...LV.map((l) =>
+  el("span", {}, Object.assign(el("i"), { style: `background:var(${l.color});width:12px;height:12px;border-radius:3px` }), l.name)));
+const GROUPS = [
+  { label: "1 defect", get: (lv) => bench.by_count["1"][lv] },
+  { label: "2 defects", get: (lv) => bench.by_count["2"][lv] },
+  { label: "3 defects", get: (lv) => bench.by_count["3"][lv] },
+  { label: `All ${n}`, get: (lv) => [L[lv].solved_any, L[lv].n] },
+];
+function drawBench() {
+  const box = document.getElementById("benchChart");
+  box.innerHTML = "";
+  const W = Math.max(320, box.clientWidth), H = 250, m = { l: 40, r: 8, t: 22, b: 30 };
+  const NS = "http://www.w3.org/2000/svg";
+  const s = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Episodes solved within 3 rounds by number of defects and evidence level" });
+  const y = (p) => m.t + (1 - p) * (H - m.t - m.b);
+  for (const p of [0, 0.25, 0.5, 0.75, 1]) {
+    svg.append(s("line", { x1: m.l, x2: W - m.r, y1: y(p), y2: y(p), stroke: css("--border"), "stroke-width": 1 }));
+    const t = s("text", { x: m.l - 8, y: y(p) + 4, "text-anchor": "end", "font-size": 11, fill: css("--text-3") }); t.textContent = `${p * 100}%`; svg.append(t);
+  }
+  const gw = (W - m.l - m.r) / GROUPS.length, bw = Math.min(30, (gw - 24) / 3), gap = 2;
+  const tip = el("div", { class: "tip" });
+  GROUPS.forEach((g, gi) => {
+    const x0 = m.l + gi * gw + (gw - (3 * bw + 2 * gap)) / 2;
+    LV.forEach((l, li) => {
+      const [k, nn] = g.get(l.id), p = nn ? k / nn : 0, x = x0 + li * (bw + gap);
+      const h = Math.max(0, y(0) - y(p));
+      const r = Math.min(4, h / 2, bw / 2);
+      const d = `M${x},${y(0)} V${y(p) + r} Q${x},${y(p)} ${x + r},${y(p)} H${x + bw - r} Q${x + bw},${y(p)} ${x + bw},${y(p) + r} V${y(0)} Z`;
+      svg.append(s("path", { d, fill: css(l.color) }));
+      const lab = s("text", { x: x + bw / 2, y: y(p) - 5, "text-anchor": "middle", "font-size": 10.5, fill: css("--text-2") });
+      lab.textContent = bw >= 28 ? `${k}/${nn}` : `${k}`;
+      svg.append(lab);
+      const hit = s("rect", { x: x - gap / 2, y: m.t, width: bw + gap, height: H - m.t - m.b, fill: "transparent" });
+      hit.addEventListener("pointermove", () => {
+        const rect = svg.getBoundingClientRect();
+        tip.replaceChildren(el("div", { style: "font-weight:600;margin-bottom:2px" }, `${g.label} · ${l.id}`), `${k} of ${nn} solved within 3 rounds (${Math.round(p * 100)}%)`);
+        tip.style.left = `${Math.min((x + bw) * rect.width / W + 10, rect.width - tip.offsetWidth - 4)}px`;
+        tip.style.top = `${Math.max(0, y(p) * rect.height / H - 40)}px`;
+        tip.style.opacity = 1;
+      });
+      hit.addEventListener("pointerleave", () => { tip.style.opacity = 0; });
+      svg.append(hit);
+    });
+    const t = s("text", { x: m.l + gi * gw + gw / 2, y: H - 8, "text-anchor": "middle", "font-size": 12, fill: css("--text-2") });
+    t.textContent = g.label;
+    svg.append(t);
+  });
+  box.append(svg, tip);
+}
+drawBench();
+new ResizeObserver(() => drawBench()).observe(document.getElementById("benchChart"));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawBench);
+const bt = document.getElementById("benchTable");
+bt.append(el("tr", {}, el("th", {}, ""), ...LV.map((l) => el("th", {}, l.id))));
+for (const g of GROUPS) bt.append(el("tr", {}, el("td", { style: "text-align:left" }, g.label), ...LV.map((l) => el("td", {}, g.get(l.id).join("/")))));
+for (const k of ["leak", "balance", "knee"]) bt.append(el("tr", {}, el("td", { style: "text-align:left" }, `contains ${k}`), ...LV.map((l) => el("td", {}, bench.by_kind[k][l.id].join("/")))));
+
+const lt = document.getElementById("levelTable");
+lt.append(el("tr", {}, el("th", {}, "Evidence"), el("th", {}, "1 round"), el("th", {}, "≤ 3 rounds"), el("th", {}, "Tokens / ep.")));
+for (const l of LV) {
+  const v = L[l.id];
+  lt.append(el("tr", {},
+    el("td", {}, el("span", { class: "lv" }, Object.assign(el("i"), { style: `background:var(${l.color})` }), l.id),
+      el("span", { class: "d" }, l.name.split("· ")[1])),
+    el("td", {}, `${v.solved_1}/${v.n}`),
+    el("td", { class: "big" }, `${v.solved_any}/${v.n}`),
+    el("td", {}, fmt(v.tokens_per_episode))));
+}
+document.getElementById("levelNote").textContent = bench.level_note || "";
+
+if (bench.loophole) {
+  const lh = bench.loophole;
+  document.getElementById("loopholeLede").textContent = lh.lede;
+  document.getElementById("loopholeCards").append(...lh.cards.map((c) => el("div", { class: "card" },
+    el("div", { class: "top" }, el("h3", {}, c.title), badge(c.status)),
+    el("dl", { class: "kv" }, ...c.rows.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])),
+    c.quote ? el("blockquote", { class: c.status === "pass" ? "right" : "wrong" }, el("span", { class: "tag" }, c.quote_tag),
+      el("code", { style: "white-space:pre-wrap;font-size:12.5px" }, c.quote)) : "",
+    el("div", { class: `verdict ${c.status === "pass" ? "right" : "wrong"}` }, c.verdict))));
+  document.getElementById("loopholeBlock").hidden = false;
+}
+if (bench.failure_modes && bench.failure_modes.length) {
+  document.getElementById("failureTitle").textContent = bench.failure_title;
+  document.getElementById("failureLede").textContent = bench.failure_lede;
+  document.getElementById("failureModes").append(...bench.failure_modes.map((f) => el("div", { class: "card fm" },
+    el("h3", {}, f.name), el("span", { class: "ep" }, f.where),
+    el("blockquote", { class: "wrong" }, el("span", { class: "tag" }, "Beam's diagnosis"), f.quote),
+    el("div", { class: "truth" }, el("b", {}, "Actual: "), f.truth))));
+  document.getElementById("failureBlock").hidden = false;
+}
+
+/* ---------------- episode explorer ---------------- */
+const benchTl = makeTimeline("bench");
+window.gaitreflect = { benchTl };   // デバッグ・検証用
+const sel = document.getElementById("epSelect");
+for (const e of bv.episodes) {
+  const l1 = e.levels.L1.solved ? "L1 pass" : "L1 FAIL";
+  sel.append(el("option", { value: e.id }, `${e.id} · ${e.defects.join(" + ")} · ${l1}`));
+}
+const slice = ([off, len]) => bin.slice(off, off + len);
+const tabs = document.getElementById("runTabs"), body = document.getElementById("runBody");
+let curEp = null;
+function showRounds(lvIdx) {
+  [...tabs.children].forEach((b, i) => b.setAttribute("aria-selected", String(i === lvIdx)));
+  const rounds = runs[`${curEp}/${LV[lvIdx].id}`] || [];
+  body.replaceChildren();
+  for (const it of rounds) {
+    const st = it.status === "fail" ? "fail" : "pass";
+    if (!it.analysis) {
+      body.append(el("div", { class: "final" }, badge(st),
+        `Round ${it.round} · final verification: ${it.errors} error${it.errors === 1 ? "" : "s"}`));
+      continue;
+    }
+    const rb = el("div", { class: "rb" },
+      el("ul", { class: "analysis" }, ...it.analysis.map((a) => el("li", {}, el("span", { class: "id" }, a.issue_id), el("span", {}, a.root_cause)))));
+    if (it.apply_error) rb.append(el("div", { class: "err" }, el("div", { class: "t" }, "✕ Blender rejected the script"), el("pre", {}, it.apply_error)));
+    rb.append(el("details", { class: "code" }, el("summary", {}, "Beam's fix script"), el("pre", {}, it.fix_code)));
+    rb.append(el("div", { class: "expected" }, el("b", {}, "Beam expected: "), it.expected));
+    const meta = [it.seconds ? `${it.seconds} s` : null, it.tokens ? `${fmt(it.tokens)} tokens` : null].filter(Boolean).join(" · ");
+    body.append(el("div", { class: "round" },
+      el("div", { class: "rh" }, badge(st), el("h3", {}, `Round ${it.round} · verifier found ${it.errors} error${it.errors === 1 ? "" : "s"}`), el("span", { class: "meta" }, meta)),
+      rb));
+  }
+}
+LV.forEach((l, i) => {
+  const b = el("button", { type: "button", role: "tab" }, l.name);
+  b.onclick = () => showRounds(i);
+  tabs.append(b);
+});
+function showEpisode(id) {
+  const e = bv.episodes.find((x) => x.id === id);
+  curEp = id;
+  for (const v of benchTl.viewers) v.dispose();
+  const hostB = document.getElementById("benchViewers");
+  hostB.replaceChildren();
+  document.getElementById("epTruth").replaceChildren(...e.truth.map((t) => el("span", { class: "chip" }, t)));
+  const panels = [{ title: "Broken input", sub: `${e.initial_errors} verifier error${e.initial_errors === 1 ? "" : "s"}`,
+                    status: "fail", buffer: slice(e.models.broken), fallOnset: e.fall_onset, fallKind: e.fall_kind }];
+  for (const l of LV) {
+    const r = e.levels[l.id];
+    const sub = r.solved
+      ? `PASS after ${r.rounds} round${r.rounds === 1 ? "" : "s"}`
+      : `${r.final_errors} error${r.final_errors === 1 ? "" : "s"} left after ${r.rounds} rounds`;
+    panels.push({ title: l.name, sub, status: r.solved ? "pass" : "fail", buffer: slice(e.models[l.id]), fallOnset: r.fall_onset, fallKind: r.fall_kind });
+  }
+  benchTl.viewers = panels.map((p) => new Viewer(p, hostB));
+  benchTl.frame = 1;
+  showRounds(1);
+}
+sel.onchange = () => showEpisode(sel.value);
+const start = bench.explore_default || bv.episodes[0].id;
+sel.value = start;
+showEpisode(start);
+
+const FILES = [
+  ["harness.py", "Blender verifier: stretch, weight audit, joint limits, support polygon, walk direction → report + prompt"],
+  ["gen_episode.py", "Builds one robot: human-direction gait with planted feet, face marker, planted defects, oracle fix"],
+  ["make_bench.py", "Generates the 30 episodes and checks each is solvable"],
+  ["reflect_loop.py", "The loop: verify → Beam (structured output) → apply → re-verify"],
+  ["run_bench.py", "Runs Beam on 30 episodes × L1/L2/L3, with a token budget"],
+  ["apply_fix.py", "Runs Beam's script in Blender with a banned-pattern guard"],
+  ["bake.py", "Hands robots that can't stand to Bullet, exports frames and .glb"],
+  ["build_viewer.py", "Packs the models and results for this page"],
+  ["render_gif.py", "Draws the comparison GIF"],
+  ["blender_run.py", "Runs a script on a .blend with pip's bpy (Blender as a Python module)"],
+  ["bench.json", "Benchmark summary shown above"],
+  ["bench_viewer.json", "Per-episode results and Beam's final diagnoses for the 3D explorer"],
+  ["bench_runs.json", "Every Beam round: diagnosis, script, Blender error"],
+  ["bench_models.bin", "120 rigs (30 broken + Beam's repairs at L1/L2/L3), concatenated .glb files"],
+];
+document.getElementById("files").append(...FILES.map(([f, d]) => el("li", {}, el("a", { href: SPACE + f, target: "_blank", rel: "noopener" }, f), el("br"), d)));
+</script>
+</body>
+</html>

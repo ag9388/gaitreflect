@@ -1,0 +1,10 @@
+__pycache__/
+episodes/
+results/*/
+results_*/
+site/bake/
+site/gifs/
+assets/fonts/
+*.blend
+*.npz
+*.glb

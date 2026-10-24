@@ -1,0 +1,122 @@
+{
+ "levels": {
+  "L1": {
+   "n": 30,
+   "solved_1": 8,
+   "solved_any": 18,
+   "avg_rounds": 1.94,
+   "scripts": 71,
+   "crashed": 4,
+   "errors_left_ratio": 0.191,
+   "tokens_per_episode": 24748
+  },
+  "L2": {
+   "n": 30,
+   "solved_1": 13,
+   "solved_any": 27,
+   "avg_rounds": 1.63,
+   "scripts": 53,
+   "crashed": 0,
+   "errors_left_ratio": 0.061,
+   "tokens_per_episode": 18109
+  },
+  "L3": {
+   "n": 30,
+   "solved_1": 11,
+   "solved_any": 23,
+   "avg_rounds": 1.74,
+   "scripts": 61,
+   "crashed": 0,
+   "errors_left_ratio": 0.078,
+   "tokens_per_episode": 20328
+  }
+ },
+ "by_kind": {
+  "leak": {
+   "L1": [
+    15,
+    20
+   ],
+   "L2": [
+    17,
+    20
+   ],
+   "L3": [
+    14,
+    20
+   ]
+  },
+  "balance": {
+   "L1": [
+    11,
+    19
+   ],
+   "L2": [
+    18,
+    19
+   ],
+   "L3": [
+    14,
+    19
+   ]
+  },
+  "knee": {
+   "L1": [
+    7,
+    17
+   ],
+   "L2": [
+    15,
+    17
+   ],
+   "L3": [
+    11,
+    17
+   ]
+  }
+ },
+ "by_count": {
+  "1": {
+   "L1": [
+    6,
+    10
+   ],
+   "L2": [
+    10,
+    10
+   ],
+   "L3": [
+    10,
+    10
+   ]
+  },
+  "2": {
+   "L1": [
+    7,
+    12
+   ],
+   "L2": [
+    9,
+    12
+   ],
+   "L3": [
+    8,
+    12
+   ]
+  },
+  "3": {
+   "L1": [
+    5,
+    8
+   ],
+   "L2": [
+    8,
+    8
+   ],
+   "L3": [
+    5,
+    8
+   ]
+  }
+ }
+}
